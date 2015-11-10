@@ -34,6 +34,7 @@ import static com.facebook.presto.jdbc.spi.type.StandardTypes.ARRAY;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.BIGINT;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.BOOLEAN;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.DATE;
+import static com.facebook.presto.jdbc.spi.type.StandardTypes.DECIMAL;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.DOUBLE;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.INTERVAL_DAY_TO_SECOND;
 import static com.facebook.presto.jdbc.spi.type.StandardTypes.INTERVAL_YEAR_TO_MONTH;
@@ -247,33 +248,25 @@ public class QueryResults
             }
             return fixedValue;
         }
-        if (type.equals(BIGINT)) {
+        if (signature.getBase().equals(BIGINT)) {
             if (value instanceof String) {
                 return Long.parseLong((String) value);
             }
             return ((Number) value).longValue();
         }
-        else if (type.equals(DOUBLE)) {
+        else if (signature.getBase().equals(DOUBLE)) {
             if (value instanceof String) {
                 return Double.parseDouble((String) value);
             }
             return ((Number) value).doubleValue();
         }
-        else if (type.equals(BOOLEAN)) {
+        else if (signature.getBase().equals(BOOLEAN)) {
             if (value instanceof String) {
                 return Boolean.parseBoolean((String) value);
             }
             return Boolean.class.cast(value);
         }
-        else if (type.equals(VARCHAR) ||
-                type.equals(JSON) ||
-                type.equals(TIME) ||
-                type.equals(TIME_WITH_TIME_ZONE) ||
-                type.equals(TIMESTAMP) ||
-                type.equals(TIMESTAMP_WITH_TIME_ZONE) ||
-                type.equals(DATE) ||
-                type.equals(INTERVAL_YEAR_TO_MONTH) ||
-                type.equals(INTERVAL_DAY_TO_SECOND)) {
+        else if (signature.getBase().equals(VARCHAR) || signature.getBase().equals(JSON) || signature.getBase().equals(TIME) || signature.getBase().equals(TIME_WITH_TIME_ZONE) || signature.getBase().equals(TIMESTAMP) || signature.getBase().equals(TIMESTAMP_WITH_TIME_ZONE) || signature.getBase().equals(DATE) || signature.getBase().equals(INTERVAL_YEAR_TO_MONTH) || signature.getBase().equals(INTERVAL_DAY_TO_SECOND) || signature.getBase().equals(DECIMAL)) {
             return String.class.cast(value);
         }
         else {

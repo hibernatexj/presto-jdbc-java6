@@ -35,7 +35,7 @@ class ColumnInfo
     private final int columnType;
     private final List<Integer> columnParameterTypes;
     private final TypeSignature columnTypeSignature;
-    private final int nullable;
+    private final Nullable nullable;
     private final boolean currency;
     private final boolean signed;
     private final int precision;
@@ -47,14 +47,31 @@ class ColumnInfo
     private final String schemaName;
     private final String catalogName;
 
+    public enum Nullable
+    {
+        NO_NULLS, NULLABLE, UNKNOWN
+    }
+
     public ColumnInfo(
-            int columnType, List<Integer> columnParameterTypes, TypeSignature columnTypeSignature, int nullable, boolean currency, boolean signed, int precision, int scale,
-            int columnDisplaySize, String columnLabel, String columnName, String tableName, String schemaName, String catalogName)
+            int columnType,
+            List<Integer> columnParameterTypes,
+            TypeSignature columnTypeSignature,
+            Nullable nullable,
+            boolean currency,
+            boolean signed,
+            int precision,
+            int scale,
+            int columnDisplaySize,
+            String columnLabel,
+            String columnName,
+            String tableName,
+            String schemaName,
+            String catalogName)
     {
         this.columnType = columnType;
         this.columnParameterTypes = ImmutableList.copyOf(checkNotNull(columnParameterTypes, "columnParameterTypes is null"));
         this.columnTypeSignature = checkNotNull(columnTypeSignature, "columnTypeName is null");
-        this.nullable = nullable;
+        this.nullable = checkNotNull(nullable, "nullable is null");
         this.currency = currency;
         this.signed = signed;
         this.precision = precision;
@@ -152,40 +169,39 @@ class ColumnInfo
         }
     }
 
-    public static int getType(TypeSignature type)
+    private static int getType(TypeSignature type)
     {
         if (type.getBase().equals("array")) {
             return Types.ARRAY;
         }
-        String s = type.toString();
-        if (s.equals("boolean")) {
+        if (type.getBase().equals("boolean")) {
             return Types.BOOLEAN;
         }
-        else if (s.equals("bigint")) {
+        else if (type.getBase().equals("bigint")) {
             return Types.BIGINT;
         }
-        else if (s.equals("double")) {
+        else if (type.getBase().equals("double")) {
             return Types.DOUBLE;
         }
-        else if (s.equals("varchar")) {
+        else if (type.getBase().equals("varchar")) {
             return Types.LONGNVARCHAR;
         }
-        else if (s.equals("varbinary")) {
+        else if (type.getBase().equals("varbinary")) {
             return Types.LONGVARBINARY;
         }
-        else if (s.equals("time")) {
+        else if (type.getBase().equals("time")) {
             return Types.TIME;
         }
-        else if (s.equals("time with time zone")) {
+        else if (type.getBase().equals("time with time zone")) {
             return Types.TIME;
         }
-        else if (s.equals("timestamp")) {
+        else if (type.getBase().equals("timestamp")) {
             return Types.TIMESTAMP;
         }
-        else if (s.equals("timestamp with time zone")) {
+        else if (type.getBase().equals("timestamp with time zone")) {
             return Types.TIMESTAMP;
         }
-        else if (s.equals("date")) {
+        else if (type.getBase().equals("date")) {
             return Types.DATE;
         }
         else {
@@ -213,7 +229,7 @@ class ColumnInfo
         return columnTypeSignature;
     }
 
-    public int getNullable()
+    public Nullable getNullable()
     {
         return nullable;
     }
@@ -273,7 +289,7 @@ class ColumnInfo
         private int columnType;
         private List<Integer> columnParameterTypes;
         private TypeSignature columnTypeSignature;
-        private int nullable;
+        private Nullable nullable;
         private boolean currency;
         private boolean signed;
         private int precision;
@@ -302,7 +318,7 @@ class ColumnInfo
             return this;
         }
 
-        public Builder setNullable(int nullable)
+        public Builder setNullable(Nullable nullable)
         {
             this.nullable = nullable;
             return this;
@@ -371,8 +387,20 @@ class ColumnInfo
         public ColumnInfo build()
         {
             return new ColumnInfo(
-                    columnType, columnParameterTypes, columnTypeSignature, nullable, currency, signed, precision, scale,
-                    columnDisplaySize, columnLabel, columnName, tableName, schemaName, catalogName);
+                    columnType,
+                    columnParameterTypes,
+                    columnTypeSignature,
+                    nullable,
+                    currency,
+                    signed,
+                    precision,
+                    scale,
+                    columnDisplaySize,
+                    columnLabel,
+                    columnName,
+                    tableName,
+                    schemaName,
+                    catalogName);
         }
     }
 }

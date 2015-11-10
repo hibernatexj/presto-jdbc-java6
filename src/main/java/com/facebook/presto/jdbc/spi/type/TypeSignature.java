@@ -16,19 +16,21 @@ package com.facebook.presto.jdbc.spi.type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.google.common.base.Objects;
+import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import static com.google.common.base.Objects.equal;
 import static java.lang.String.format;
-import static java.util.Collections.unmodifiableList;
 
 public class TypeSignature
 {
     private final String base;
     private final List<TypeSignature> parameters;
     private final List<Object> literalParameters;
+    private final boolean calculated;
 
     public TypeSignature(String base, List<TypeSignature> parameters, List<Object> literalParameters)
     {
@@ -39,10 +41,27 @@ public class TypeSignature
         checkArgument(parameters != null, "parameters is null");
         checkArgument(literalParameters != null, "literalParameters is null");
         for (Object literal : literalParameters) {
-            checkArgument(literal instanceof String || literal instanceof Long, "Unsupported literal type: %s", literal.getClass());
+            checkArgument(literal instanceof String || literal instanceof Long || literal instanceof TypeLiteralCalculation, "Unsupported literal type: %s", literal.getClass());
         }
-        this.parameters = unmodifiableList(new ArrayList<TypeSignature>(parameters));
-        this.literalParameters = unmodifiableList(new ArrayList<Object>(literalParameters));
+        this.parameters = ImmutableList.copyOf(parameters);
+        this.literalParameters = ImmutableList.copyOf(literalParameters);
+
+        boolean calculated = false;
+        for (TypeSignature parameter : parameters) {
+            if (parameter.isCalculated()) {
+                calculated = true;
+                break;
+            }
+        }
+
+        for (Object literalParameter : literalParameters) {
+            if (TypeLiteralCalculation.class.isInstance(literalParameter)) {
+                calculated = true;
+                break;
+            }
+        }
+
+        this.calculated = calculated;
     }
 
     private static boolean validateName(String name)
@@ -109,6 +128,11 @@ public class TypeSignature
         return literalParameters;
     }
 
+    public boolean isCalculated()
+    {
+        return calculated;
+    }
+
     @JsonCreator
     public static TypeSignature parseTypeSignature(String signature)
     {
@@ -120,24 +144,24 @@ public class TypeSignature
         List<TypeSignature> parameters = new ArrayList<TypeSignature>();
         List<Object> literalParameters = new ArrayList<Object>();
         int parameterStart = -1;
-        int bracketCount = 0;
-        boolean inLiteralParameters = false;
+        int angleBracketDepth = 0;
+        int roundBracketDepth = 0;
 
         for (int i = 0; i < signature.length(); i++) {
             char c = signature.charAt(i);
             if (c == '<') {
-                if (bracketCount == 0) {
+                if (angleBracketDepth == 0) {
                     verify(baseName == null, "Expected baseName to be null");
                     verify(parameterStart == -1, "Expected parameter start to be -1");
                     baseName = signature.substring(0, i);
                     parameterStart = i + 1;
                 }
-                bracketCount++;
+                angleBracketDepth++;
             }
             else if (c == '>') {
-                bracketCount--;
-                checkArgument(bracketCount >= 0, "Bad type signature: '%s'", signature);
-                if (bracketCount == 0) {
+                angleBracketDepth--;
+                checkArgument(angleBracketDepth >= 0, "Bad type signature: '%s'", signature);
+                if (angleBracketDepth == 0) {
                     checkArgument(parameterStart >= 0, "Bad type signature: '%s'", signature);
                     parameters.add(parseTypeSignature(signature.substring(parameterStart, i)));
                     parameterStart = i + 1;
@@ -146,22 +170,20 @@ public class TypeSignature
                     }
                 }
             }
-            else if (c == ',') {
-                if (bracketCount == 1 && !inLiteralParameters) {
+            else if (c == ',' && roundBracketDepth <= 1) {
+                if (angleBracketDepth == 1 && roundBracketDepth == 0) {
                     checkArgument(parameterStart >= 0, "Bad type signature: '%s'", signature);
                     parameters.add(parseTypeSignature(signature.substring(parameterStart, i)));
                     parameterStart = i + 1;
                 }
-                else if (bracketCount == 0 && inLiteralParameters) {
+                else if (angleBracketDepth == 0 && roundBracketDepth == 1) {
                     checkArgument(parameterStart >= 0, "Bad type signature: '%s'", signature);
                     literalParameters.add(parseLiteral(signature.substring(parameterStart, i)));
                     parameterStart = i + 1;
                 }
             }
-            else if (c == '(') {
-                checkArgument(!inLiteralParameters, "Bad type signature: '%s'", signature);
-                inLiteralParameters = true;
-                if (bracketCount == 0) {
+            else if (c == '(' && roundBracketDepth++ == 0) {
+                if (angleBracketDepth == 0) {
                     if (baseName == null) {
                         verify(parameters.isEmpty(), "Expected no parameters");
                         verify(parameterStart == -1, "Expected parameter start to be -1");
@@ -170,10 +192,8 @@ public class TypeSignature
                     parameterStart = i + 1;
                 }
             }
-            else if (c == ')') {
-                checkArgument(inLiteralParameters, "Bad type signature: '%s'", signature);
-                inLiteralParameters = false;
-                if (bracketCount == 0) {
+            else if (c == ')' && --roundBracketDepth == 0) {
+                if (angleBracketDepth == 0) {
                     checkArgument(i == signature.length() - 1, "Bad type signature: '%s'", signature);
                     checkArgument(parameterStart >= 0, "Bad type signature: '%s'", signature);
                     literalParameters.add(parseLiteral(signature.substring(parameterStart, i)));
@@ -187,13 +207,21 @@ public class TypeSignature
 
     private static Object parseLiteral(String literal)
     {
+        checkArgument(literal != null, "Null literal", literal);
+
+        literal = literal.trim();
+        checkArgument(!literal.isEmpty(), "Bad literal: '%s'", literal);
+
         if (literal.startsWith("'") || literal.endsWith("'")) {
             checkArgument(literal.startsWith("'") && literal.endsWith("'"), "Bad literal: '%s'", literal);
             return literal.substring(1, literal.length() - 1);
         }
-        else {
+        try {
             return Long.parseLong(literal);
         }
+        catch (NumberFormatException ignored) {
+        }
+        return new TypeLiteralCalculation(literal);
     }
 
     @Override
@@ -207,9 +235,10 @@ public class TypeSignature
         }
 
         TypeSignature other = (TypeSignature) o;
-        return Objects.equal(this.base.toLowerCase(Locale.ENGLISH), other.base.toLowerCase(Locale.ENGLISH)) &&
-                Objects.equal(this.parameters, other.parameters) &&
-                Objects.equal(this.literalParameters, other.literalParameters);
+
+        return equal(this.base.toLowerCase(Locale.ENGLISH), other.base.toLowerCase(Locale.ENGLISH)) &&
+                equal(this.parameters, other.parameters) &&
+                equal(this.literalParameters, other.literalParameters);
     }
 
     @Override
@@ -218,7 +247,7 @@ public class TypeSignature
         return Objects.hashCode(base.toLowerCase(Locale.ENGLISH), parameters, literalParameters);
     }
 
-    private static void checkArgument(boolean argument, String format, Object...args)
+    private static void checkArgument(boolean argument, String format, Object... args)
     {
         if (!argument) {
             throw new IllegalArgumentException(format(format, args));
